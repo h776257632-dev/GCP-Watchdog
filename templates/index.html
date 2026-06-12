@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>GCP Watchdog Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #0b0f19;
+      --card-bg: rgba(17, 24, 39, 0.7);
+      --card-border: rgba(255, 255, 255, 0.06);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --primary: #3b82f6;
+      --primary-glow: rgba(59, 130, 246, 0.3);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --info: #06b6d4;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.12) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.1) 0px, transparent 50%);
+    }
+
+    header {
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 16px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: 0.5px;
+    }
+
+    header .subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .tab-btn.active {
+      color: #fff;
+      background: var(--primary);
+      box-shadow: 0 0 12px var(--primary-glow);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    main {
+      max-width: 1300px;
+      margin: 30px auto;
+      padding: 0 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .card-title {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .card-value {
+      font-size: 28px;
+      font-weight: 700;
+      margin-top: 8px;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .card-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    .ok { color: var(--success); }
+    .warn { color: var(--warning); }
+    .danger { color: var(--danger); }
+    .info { color: var(--info); }
+
+    .chart-container {
+      width: 100%;
+      height: 340px;
+      position: relative;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 20px;
+    }
+
+    .probe-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .probe-item:last-child {
+      border-bottom: none;
+    }
+
+    .probe-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .probe-target {
+      font-size: 14px;
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    .probe-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      text-transform: uppercase;
+    }
+
+    .badge-ok {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+    }
+
+    .badge-danger {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--danger);
+    }
+
+    .badge-warn {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--warning);
+    }
+
+    .badge-info {
+      background: rgba(6, 182, 212, 0.15);
+      color: var(--info);
+    }
+
+    .table-container {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    th {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      padding: 12px 16px;
+      font-weight: 600;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    td {
+      font-size: 14px;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: #e5e7eb;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Settings CSS */
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .form-control {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #fff;
+      font-family: inherit;
+      font-size: 14px;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 8px rgba(59, 130, 246, 0.25);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .checkbox-group input {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .btn {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn:hover {
+      background: #2563eb;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-border);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+      box-shadow: none;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+
+    .alert-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1f2937;
+      border-left: 4px solid var(--primary);
+      padding: 16px 24px;
+      border-radius: 8px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      z-index: 1000;
+      display: none;
+      animation: slideIn 0.3s ease-out forwards;
+      max-width: 380px;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateY(100px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>GCP Watchdog Dashboard</h1>
+    <div class="subtitle">轻量级监控告警与系统管理面板</div>
+  </div>
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="switchTab('dashboard')">实时监控</button>
+    <button class="tab-btn" onclick="switchTab('settings-tab')">系统设置</button>
+  </div>
+</header>
+
+<main>
+  <!-- DASHBOARD TAB -->
+  <div id="dashboard" class="tab-content active">
+    <!-- Quick Status Cards -->
+    <div class="grid-4" id="cards">
+      <!-- Cards will load dynamically -->
+      <div class="card"><div class="card-title">正在加载...</div></div>
+    </div>
+
+    <!-- Chart Section -->
+    <div class="card">
+      <div class="card-title" style="margin-bottom: 15px;">带宽瞬时速度变动 (KB/s)</div>
+      <div class="chart-container">
+        <canvas id="trafficChart"></canvas>
+      </div>
+    </div>
+
+    <!-- URL & TCP Probes -->
+    <div class="grid-2">
+      <div class="card">
+        <h3 style="margin-bottom: 15px; font-weight: 600;">HTTP/HTTPS 可用性</h3>
+        <div id="urlChecks"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom: 15px; font-weight: 600;">TCP 端口连通性</h3>
+        <div id="tcpChecks"></div>
+      </div>
+    </div>
+
+    <!-- Recent Alerts -->
+    <div class="card">
+      <h3 style="margin-bottom: 15px; font-weight: 600;">最近系统告警</h3>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>报警时间</th>
+              <th>等级</th>
+              <th>告警类型</th>
+              <th>告警主题</th>
+              <th>邮件发送</th>
+            </tr>
+          </thead>
+          <tbody id="alerts">
+            <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">暂无告警记录</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS TAB -->
+  <div id="settings-tab" class="tab-content">
+    <form id="settingsForm" onsubmit="saveSettings(event)">
+      <div class="card" style="margin-bottom: 20px;">
+        <h3 style="margin-bottom: 20px; font-weight: 700; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
+          SMTP 邮件发送配置
+        </h3>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="smtp_host">SMTP 服务器主机</label>
+            <input type="text" id="smtp_host" class="form-control" required placeholder="如: smtp.qq.com">
+          </div>
+          <div class="form-group">
+            <label for="smtp_port">SMTP 服务器端口</label>
+            <input type="number" id="smtp_port" class="form-control" required placeholder="如: 465">
+          </div>
+          <div class="form-group">
+            <label for="smtp_user">发件人邮箱地址</label>
+            <input type="email" id="smtp_user" class="form-control" required placeholder="你的登录邮箱">
+          </div>
+          <div class="form-group">
+            <label for="smtp_auth">邮箱授权码 / 密码</label>
+            <input type="password" id="smtp_auth" class="form-control" required placeholder="你的授权码，一般非密码">
+          </div>
+          <div class="form-group">
+            <label for="smtp_to">默认接收邮件地址</label>
+            <input type="email" id="smtp_to" class="form-control" required placeholder="收件人邮箱">
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="smtp_ssl">
+            <label for="smtp_ssl">启用 SSL 加密连接 (通常端口 465 需要勾选，587/25 不要勾选)</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-bottom: 20px; font-weight: 700; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
+          系统报警与控制阈值
+        </h3>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="traffic_warn_mb">月流量预警阈值 (MB)</label>
+            <input type="number" id="traffic_warn_mb" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="traffic_critical_mb">月流量严重预警阈值 (MB)</label>
+            <input type="number" id="traffic_critical_mb" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="traffic_shutdown_mb">月出站超限自动关机阈值 (MB)</label>
+            <input type="number" id="traffic_shutdown_mb" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="mem_warn_pct">内存占用警告阈值 (%)</label>
+            <input type="number" id="mem_warn_pct" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="disk_warn_pct">磁盘占用警告阈值 (%)</label>
+            <input type="number" id="disk_warn_pct" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="alert_cooldown_seconds">同类型告警冷却时长 (秒)</label>
+            <input type="number" id="alert_cooldown_seconds" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="daily_mail_limit">每日发信限制次数 (封)</label>
+            <input type="number" id="daily_mail_limit" class="form-control" required>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="auto_shutdown">
+            <label for="auto_shutdown">开启自动关机保护 (当出站流量超出阈值时自动下达 shutdown 命令)</label>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button type="submit" class="btn">保存系统配置</button>
+          <button type="button" class="btn btn-secondary" onclick="testEmail()">发送测试邮件</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</main>
+
+<div class="alert-toast" id="toast">
+  <div id="toast-title" style="font-weight: 700; margin-bottom: 4px;">通知</div>
+  <div id="toast-body" style="font-size: 13px; color: #d1d5db;">内容</div>
+</div>
+
+<script src="/static/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+[Unit]
+Description=GCP Watchdog one-shot monitor
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/gcp_watchdog
+ExecStart=/opt/gcp_watchdog/venv/bin/python /opt/gcp_watchdog/watchdog.py --once

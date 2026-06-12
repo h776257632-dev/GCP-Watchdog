@@ -1,0 +1,10 @@
+[Unit]
+Description=Run GCP Watchdog every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=gcp-watchdog.service
+
+[Install]
+WantedBy=timers.target
