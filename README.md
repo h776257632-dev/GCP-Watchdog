@@ -1,6 +1,6 @@
 # GCP Watchdog
 
-轻量级 GCP e2-micro 监控与告警工具，适合小内存 Debian 服务器。
+专为防止流量超标产生天价扣费而制作的轻量级 GCP e2-micro 监控与告警工具，适合小内存 Debian 服务器。
 
 ## 功能特性
 
