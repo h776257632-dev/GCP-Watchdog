@@ -44,7 +44,6 @@ class Settings:
 
         self.web_host = os.getenv("WEB_HOST", "127.0.0.1")
         self.web_port = _get_int("WEB_PORT", 8765)
-        self.web_password = os.getenv("WEB_PASSWORD", "change-me")
 
         data_dir_str = os.getenv("DATA_DIR", "data")
         log_dir_str = os.getenv("LOG_DIR", "logs")
@@ -180,5 +179,20 @@ class Settings:
             except Exception:
                 pass
         return 85
+
+    @property
+    def secret_key(self) -> str:
+        import storage
+        import secrets
+        val = storage.get_state("secret_key")
+        if not val:
+            val = secrets.token_hex(32)
+            storage.set_state("secret_key", val)
+        return val
+
+    @property
+    def webhook_url(self) -> str:
+        import storage
+        return storage.get_state("webhook_url", "")
 
 settings = Settings()

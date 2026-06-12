@@ -240,6 +240,7 @@ async function loadSettings() {
     document.getElementById('alert_cooldown_seconds').value = s.alert_cooldown_seconds || 1800;
     document.getElementById('daily_mail_limit').value = s.daily_mail_limit || 20;
     document.getElementById('auto_shutdown').checked = !!s.auto_shutdown;
+    document.getElementById('webhook_url').value = s.webhook_url || '';
   } catch (e) {
     showToast('加载配置失败', e.message, true);
   }
@@ -262,7 +263,8 @@ async function saveSettings(e) {
     disk_warn_pct: parseInt(document.getElementById('disk_warn_pct').value),
     alert_cooldown_seconds: parseInt(document.getElementById('alert_cooldown_seconds').value),
     daily_mail_limit: parseInt(document.getElementById('daily_mail_limit').value),
-    auto_shutdown: document.getElementById('auto_shutdown').checked
+    auto_shutdown: document.getElementById('auto_shutdown').checked,
+    webhook_url: document.getElementById('webhook_url').value
   };
   
   try {
@@ -283,9 +285,22 @@ async function saveSettings(e) {
 }
 
 async function testEmail() {
-  showToast('正在发送...', '正在向配置的邮箱发送测试邮件，请稍候...');
+  const data = {
+    smtp_host: document.getElementById('smtp_host').value,
+    smtp_port: parseInt(document.getElementById('smtp_port').value) || 0,
+    smtp_user: document.getElementById('smtp_user').value,
+    smtp_auth: document.getElementById('smtp_auth').value,
+    smtp_to: document.getElementById('smtp_to').value,
+    smtp_ssl: document.getElementById('smtp_ssl').checked
+  };
+
+  showToast('正在发送...', '正在使用表单中的配置进行发信测试，请稍候...');
   try {
-    const r = await fetch('/api/settings/test', { method: 'POST' });
+    const r = await fetch('/api/settings/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
     const res = await r.json();
     if (res.ok) {
       showToast('发送成功', '测试邮件已发送，请检查收件箱！');
@@ -293,6 +308,35 @@ async function testEmail() {
       showToast('发送失败', res.error || '未知错误', true);
     }
   } catch (err) {
+    showToast('网络错误', err.message, true);
+  }
+}
+
+async function changePassword(e) {
+  e.preventDefault();
+  const old_password = document.getElementById('old_password').value;
+  const new_password = document.getElementById('new_password').value;
+  const confirm_new_password = document.getElementById('confirm_new_password').value;
+  
+  if (new_password !== confirm_new_password) {
+    showToast('修改密码失败', '两次输入的新密码不一致', true);
+    return;
+  }
+  
+  try {
+    const r = await fetch('/api/settings/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ old_password, new_password })
+    });
+    const res = await r.json();
+    if (res.ok) {
+      showToast('成功', '登录密码已成功修改！');
+      document.getElementById('passwordForm').reset();
+    } else {
+      showToast('失败', res.error || '修改密码错误', true);
+    }
+  } catch(err) {
     showToast('网络错误', err.message, true);
   }
 }

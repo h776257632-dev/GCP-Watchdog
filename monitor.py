@@ -3,6 +3,8 @@ import time
 import socket
 import subprocess
 import concurrent.futures
+import logging
+from logging.handlers import RotatingFileHandler
 from urllib.parse import urlparse
 
 import psutil
@@ -11,6 +13,26 @@ import requests
 import storage
 from config import settings
 from mailer import send_mail
+
+# Setup Logging
+logger = logging.getLogger("gcp_watchdog")
+logger.setLevel(logging.INFO)
+
+# Make sure log dir exists
+settings.log_dir.mkdir(parents=True, exist_ok=True)
+log_file_path = settings.log_dir / "watchdog.log"
+
+if not logger.handlers:
+    # Rotating handler: max size 5MB, keep 3 backups
+    handler = RotatingFileHandler(log_file_path, maxBytes=5*1024*1024, backupCount=3, encoding="utf-8")
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    
+    # Also log to stdout for systemd journal capture
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    logger.addHandler(console)
 
 def default_iface() -> str:
     try:
@@ -60,6 +82,7 @@ def update_monthly_traffic(iface: str, tx: int, rx: int) -> tuple[int, int, floa
     last_ts = int(storage.get_state("last_ts", "0"))
     
     if saved_month != month_key:
+        logger.info(f"New month detected: {month_key}. Resetting counters.")
         storage.set_state("baseline_month", month_key)
         monthly_tx_bytes = 0
         monthly_rx_bytes = 0
@@ -78,15 +101,18 @@ def update_monthly_traffic(iface: str, tx: int, rx: int) -> tuple[int, int, floa
         lrx = int(last_rx)
         
         if tx < ltx:
+            logger.info("Raw TX counter reset detected (reboot).")
             delta_tx = tx
         else:
             delta_tx = tx - ltx
             
         if rx < lrx:
+            logger.info("Raw RX counter reset detected (reboot).")
             delta_rx = rx
         else:
             delta_rx = rx - lrx
     else:
+        logger.info("First run or interface changed. Baseline set.")
         delta_tx = 0
         delta_rx = 0
         
@@ -188,6 +214,7 @@ def collect_status() -> dict:
 
 def alert_allowed(alert_type: str) -> bool:
     if storage.count_mails_today() >= settings.daily_mail_limit:
+        logger.warning("Daily mail limit reached. Alert skipped.")
         return False
     key = f"last_alert_{alert_type}"
     last = int(storage.get_state(key, "0"))
@@ -197,14 +224,71 @@ def alert_allowed(alert_type: str) -> bool:
     storage.set_state(key, str(now))
     return True
 
+def send_webhook(title: str, body: str) -> None:
+    url = settings.webhook_url
+    if not url:
+        return
+        
+    data = {}
+    if "open.feishu.cn" in url:
+        data = {
+            "msg_type": "post",
+            "content": {
+                "post": {
+                    "zh_cn": {
+                        "title": title,
+                        "content": [[{"tag": "text", "text": body}]]
+                    }
+                }
+            }
+        }
+    elif "oapi.dingtalk.com" in url:
+        data = {
+            "msgtype": "markdown",
+            "markdown": {
+                "title": title,
+                "text": f"### {title}\n\n{body.replace('\n', '\n\n')}"
+            }
+        }
+    elif "discord.com/api/webhooks/" in url or "discordapp.com/api/webhooks/" in url:
+        data = {
+            "username": "GCP Watchdog",
+            "embeds": [{
+                "title": title,
+                "description": body,
+                "color": 15158332
+            }]
+        }
+    else:
+        data = {
+            "title": title,
+            "text": body,
+            "content": body
+        }
+        
+    try:
+        resp = requests.post(url, json=data, timeout=8)
+        logger.info(f"Webhook push succeeded: Status {resp.status_code}")
+    except Exception as e:
+        logger.error(f"Failed to send Webhook: {e}")
+
 def send_alert(level: str, alert_type: str, title: str, message: str):
     sent = False
+    logger.info(f"Triggering alert: [{level}] {title} (Type: {alert_type})")
+    
     if alert_allowed(alert_type):
         try:
             send_mail(title, message)
             sent = True
+            logger.info("Email alert sent successfully.")
         except Exception as e:
-            print(f"Failed to send email alert for {alert_type}: {e}")
+            logger.error(f"Failed to send email alert: {e}")
+            
+        try:
+            send_webhook(title, message)
+        except Exception as e:
+            logger.error(f"Failed to send Webhook alert: {e}")
+            
     storage.insert_alert(level, alert_type, title, message, sent=sent)
 
 def evaluate_and_alert(data: dict):
@@ -225,6 +309,7 @@ def evaluate_and_alert(data: dict):
     if tx >= settings.traffic_shutdown_mb:
         send_alert("danger", "traffic_shutdown", "GCP Watchdog：出站流量达到关机阈值", base_msg)
         if settings.auto_shutdown:
+            logger.warning("Initiating emergency system shutdown!")
             time.sleep(5)
             try:
                 subprocess.Popen(["/sbin/shutdown", "-h", "now", "GCP Watchdog traffic limit exceeded"])
@@ -235,7 +320,7 @@ def evaluate_and_alert(data: dict):
                     try:
                         subprocess.Popen(["systemctl", "poweroff"])
                     except Exception as e:
-                        print(f"Failed to initiate shutdown: {e}")
+                        logger.error(f"Failed to execute shutdown commands: {e}")
     elif tx >= settings.traffic_critical_mb:
         send_alert("critical", "traffic_critical", "GCP Watchdog：出站流量严重警告", base_msg)
     elif tx >= settings.traffic_warn_mb:
@@ -282,9 +367,11 @@ def evaluate_and_alert(data: dict):
                            base_msg + f"\nTCP: {target} 已经恢复正常。\n")
 
 def run_once() -> dict:
+    logger.info("Executing periodic watchdog check...")
     storage.init_db()
     data = collect_status()
     storage.insert_metric(data)
     evaluate_and_alert(data)
     storage.cleanup_old(30)
+    logger.info("Watchdog check cycle completed.")
     return data

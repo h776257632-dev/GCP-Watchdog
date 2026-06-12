@@ -1,0 +1,41 @@
+# Python compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Local configuration and environment secrets (CRITICAL)
+.env
+.env.local
+
+# Project local SQLite data and SQLite journal files (CRITICAL)
+/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Project local logs
+/logs/
+*.log
+
+# Editor/IDE metadata
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# OS metadata
+.DS_Store
+.DS_Store?
+Thumbs.db

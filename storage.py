@@ -1,5 +1,7 @@
 import sqlite3
 import time
+import hashlib
+import secrets
 from pathlib import Path
 from config import settings
 
@@ -48,7 +50,64 @@ def init_db():
             value TEXT NOT NULL
         )
         """)
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+        """)
         conn.commit()
+
+def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
+    if salt is None:
+        salt = secrets.token_hex(16)
+    pwd_bytes = password.encode('utf-8')
+    salt_bytes = salt.encode('utf-8')
+    h_bytes = hashlib.pbkdf2_hmac('sha256', pwd_bytes, salt_bytes, 100000)
+    return h_bytes.hex(), salt
+
+def create_admin(username: str, password: str) -> bool:
+    h_pass, salt = hash_password(password)
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, salt, created_at) VALUES (?, ?, ?, ?)",
+                (username, h_pass, salt, int(time.time()))
+            )
+            conn.commit()
+            return True
+    except sqlite3.IntegrityError:
+        return False
+
+def verify_admin(username: str, password: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute("SELECT password_hash, salt FROM users WHERE username=?", (username,)).fetchone()
+        if not row:
+            return False
+        stored_hash = row["password_hash"]
+        salt = row["salt"]
+        h_pass, _ = hash_password(password, salt)
+        return secrets.compare_digest(stored_hash, h_pass)
+
+def has_admin() -> bool:
+    with get_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()
+        return int(row["c"]) > 0
+
+def update_admin_password(username: str, old_password: str, new_password: str) -> bool:
+    if not verify_admin(username, old_password):
+        return False
+    h_pass, salt = hash_password(new_password)
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash=?, salt=? WHERE username=?",
+            (h_pass, salt, username)
+        )
+        conn.commit()
+    return True
 
 def get_state(key: str, default: str | None = None) -> str | None:
     with get_conn() as conn:
